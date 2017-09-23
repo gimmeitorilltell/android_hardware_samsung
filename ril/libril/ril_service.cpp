@@ -25,7 +25,6 @@
 #include <hidl/HidlTransportSupport.h>
 #include <utils/SystemClock.h>
 #include <inttypes.h>
-#include <cutils/properties.h>
 
 #define INVALID_HEX_CHAR 16
 
@@ -3016,7 +3015,7 @@ int radio::getCurrentCallsResponse(int slotId,
                 RIL_Call *p_cur = ((RIL_Call **) response)[i];
                 /* each call info */
                 calls[i].state = (CallState) p_cur->state;
-                calls[i].index = p_cur->index & 0xff;
+                calls[i].index = p_cur->index;
                 calls[i].toa = p_cur->toa;
                 calls[i].isMpty = p_cur->isMpty;
                 calls[i].isMT = p_cur->isMT;
@@ -3267,8 +3266,7 @@ int radio::getSignalStrengthResponse(int slotId,
         populateResponseInfo(responseInfo, serial, responseType, e);
         SignalStrength signalStrength = {};
         if (response == NULL || (responseLen != sizeof(RIL_SignalStrength_v10)
-                && responseLen != sizeof(RIL_SignalStrength_v8)
-                && responseLen != sizeof(RIL_SignalStrength_v6))) {
+                && responseLen != sizeof(RIL_SignalStrength_v8))) {
             RLOGE("getSignalStrengthResponse: Invalid response");
             if (e == RIL_E_SUCCESS) responseInfo.error = RadioError::INVALID_RESPONSE;
         } else {
@@ -3591,9 +3589,8 @@ int radio::getVoiceRegistrationStateResponse(int slotId,
                RLOGE("getVoiceRegistrationStateResponse Invalid response: NULL");
                if (e == RIL_E_SUCCESS) responseInfo.error = RadioError::INVALID_RESPONSE;
         } else if (s_vendorFunctions->version <= 14) {
-            if (numStrings < 15) {
-                RLOGE("getVoiceRegistrationStateResponse Invalid response: numStrings < 15 (%d < 15)",
-						numStrings);
+            if (numStrings != 15) {
+                RLOGE("getVoiceRegistrationStateResponse Invalid response: NULL");
                 if (e == RIL_E_SUCCESS) responseInfo.error = RadioError::INVALID_RESPONSE;
             } else {
                 char **resp = (char **) response;
@@ -3611,9 +3608,8 @@ int radio::getVoiceRegistrationStateResponse(int slotId,
             RIL_VoiceRegistrationStateResponse *voiceRegState =
                     (RIL_VoiceRegistrationStateResponse *)response;
 
-            if (responseLen < sizeof(RIL_VoiceRegistrationStateResponse)) {
-                RLOGE("getVoiceRegistrationStateResponse Invalid response: responseLen < sizeof(RIL_VoiceRegistrationStateResponse) (%d < %d)",
-						responseLen, sizeof(RIL_VoiceRegistrationStateResponse));
+            if (responseLen != sizeof(RIL_VoiceRegistrationStateResponse)) {
+                RLOGE("getVoiceRegistrationStateResponse Invalid response: NULL");
                 if (e == RIL_E_SUCCESS) responseInfo.error = RadioError::INVALID_RESPONSE;
             } else {
                 voiceRegResponse.regState = (RegState) voiceRegState->regState;
@@ -3656,8 +3652,8 @@ int radio::getDataRegistrationStateResponse(int slotId,
             if (e == RIL_E_SUCCESS) responseInfo.error = RadioError::INVALID_RESPONSE;
         } else if (s_vendorFunctions->version <= 14) {
             int numStrings = responseLen / sizeof(char *);
-            if (numStrings < 6) {
-                RLOGE("getDataRegistrationStateResponse Invalid response: numStrings < 6 (%d < 6)", numStrings);
+            if ((numStrings != 6) && (numStrings != 11)) {
+                RLOGE("getDataRegistrationStateResponse Invalid response: NULL");
                 if (e == RIL_E_SUCCESS) responseInfo.error = RadioError::INVALID_RESPONSE;
             } else {
                 char **resp = (char **) response;
@@ -3672,9 +3668,8 @@ int radio::getDataRegistrationStateResponse(int slotId,
             RIL_DataRegistrationStateResponse *dataRegState =
                     (RIL_DataRegistrationStateResponse *)response;
 
-            if (responseLen < sizeof(RIL_DataRegistrationStateResponse)) {
-                RLOGE("getDataRegistrationStateResponse Invalid response: responseLen < sizeof(RIL_DataRegistrationStateResponse) (%d < %d)",
-						responseLen, sizeof(RIL_DataRegistrationStateResponse));
+            if (responseLen != sizeof(RIL_DataRegistrationStateResponse)) {
+                RLOGE("getDataRegistrationStateResponse Invalid response: NULL");
                 if (e == RIL_E_SUCCESS) responseInfo.error = RadioError::INVALID_RESPONSE;
             } else {
                 dataRegResponse.regState = (RegState) dataRegState->regState;
@@ -3703,10 +3698,6 @@ int radio::getOperatorResponse(int slotId,
 #if VDBG
     RLOGD("getOperatorResponse: serial %d", serial);
 #endif
-    int mqanelements;
-    char value[PROPERTY_VALUE_MAX];
-    property_get("ro.ril.telephony.mqanelements", value, "4");
-	mqanelements = atoi(value);
 
     if (radioService[slotId]->mRadioResponse != NULL) {
         RadioResponseInfo responseInfo = {};
@@ -3715,14 +3706,14 @@ int radio::getOperatorResponse(int slotId,
         hidl_string shortName;
         hidl_string numeric;
         int numStrings = responseLen / sizeof(char *);
-        if (response == NULL || numStrings != mqanelements - 2) {
+        if (response == NULL || numStrings != 3) {
             RLOGE("getOperatorResponse Invalid response: NULL");
             if (e == RIL_E_SUCCESS) responseInfo.error = RadioError::INVALID_RESPONSE;
 
         } else {
             char **resp = (char **) response;
             longName = convertCharPtrToHidlString(resp[0]);
-            shortName = convertCharPtrToHidlString(resp[0]);
+            shortName = convertCharPtrToHidlString(resp[1]);
             numeric = convertCharPtrToHidlString(resp[2]);
         }
         Return<void> retStatus = radioService[slotId]->mRadioResponse->getOperatorResponse(
@@ -4351,26 +4342,22 @@ int radio::getAvailableNetworksResponse(int slotId,
 #if VDBG
     RLOGD("getAvailableNetworksResponse: serial %d", serial);
 #endif
-    int mqanelements;
-    char value[PROPERTY_VALUE_MAX];
-    property_get("ro.ril.telephony.mqanelements", value, "4");
-	mqanelements = atoi(value);
 
     if (radioService[slotId]->mRadioResponse != NULL) {
         RadioResponseInfo responseInfo = {};
         populateResponseInfo(responseInfo, serial, responseType, e);
         hidl_vec<OperatorInfo> networks;
         if ((response == NULL && responseLen != 0)
-                || responseLen % (mqanelements * sizeof(char *))!= 0) {
+                || responseLen % (4 * sizeof(char *))!= 0) {
             RLOGE("getAvailableNetworksResponse Invalid response: NULL");
             if (e == RIL_E_SUCCESS) responseInfo.error = RadioError::INVALID_RESPONSE;
         } else {
             char **resp = (char **) response;
             int numStrings = responseLen / sizeof(char *);
-            networks.resize(numStrings/mqanelements);
-            for (int i = 0, j = 0; i < numStrings; i = i + mqanelements, j++) {
+            networks.resize(numStrings/4);
+            for (int i = 0, j = 0; i < numStrings; i = i + 4, j++) {
                 networks[j].alphaLong = convertCharPtrToHidlString(resp[i]);
-                networks[j].alphaShort = convertCharPtrToHidlString(resp[i]);
+                networks[j].alphaShort = convertCharPtrToHidlString(resp[i + 1]);
                 networks[j].operatorNumeric = convertCharPtrToHidlString(resp[i + 2]);
                 int status = convertOperatorStatusToInt(resp[i + 3]);
                 if (status == -1) {
@@ -6704,193 +6691,9 @@ int radio::nitzTimeReceivedInd(int slotId,
     return 0;
 }
 
-void convertRilSignalStrengthToHalV5(void *response, size_t responseLen,
-        SignalStrength& signalStrength) {
-    RIL_SignalStrength_v5 *rilSignalStrength = (RIL_SignalStrength_v5 *) response;
-    int gsmSignalStrength;
-    int cdmaDbm;
-    int evdoDbm;
-
-    gsmSignalStrength = rilSignalStrength->GW_SignalStrength.signalStrength & 0xFF;
-
-#ifdef MODEM_TYPE_XMM6260
-        if (gsmSignalStrength < 0 ||
-                (gsmSignalStrength > 31 && rilSignalStrength->GW_SignalStrength.signalStrength != 99)) {
-            gsmSignalStrength = rilSignalStrength->CDMA_SignalStrength.dbm;
-        }
-#else
-        if (gsmSignalStrength < 0) {
-            gsmSignalStrength = 99;
-        } else if (gsmSignalStrength > 31 && gsmSignalStrength != 99) {
-            gsmSignalStrength = 31;
-        }
-#endif
-
-#if defined(MODEM_TYPE_XMM6262) || defined(SAMSUNG_NEXT_GEN_MODEM)
-        cdmaDbm = rilSignalStrength->CDMA_SignalStrength.dbm & 0xFF;
-        if (cdmaDbm < 0) {
-            cdmaDbm = 99;
-        } else if (cdmaDbm > 31 && cdmaDbm != 99) {
-            cdmaDbm = 31;
-        }
-#else
-        cdmaDbm = rilSignalStrength->CDMA_SignalStrength.dbm;
-#endif
-
-#if defined(MODEM_TYPE_XMM6262) || defined(SAMSUNG_NEXT_GEN_MODEM)
-        evdoDbm = rilSignalStrength->EVDO_SignalStrength.dbm & 0xFF;
-        if (evdoDbm < 0) {
-            evdoDbm = 99;
-        } else if (evdoDbm > 31 && evdoDbm != 99) {
-            evdoDbm = 31;
-        }
-#else
-        evdoDbm = rilSignalStrength->EVDO_SignalStrength.dbm;
-#endif
-
-    signalStrength.gw.signalStrength = gsmSignalStrength;
-    signalStrength.gw.bitErrorRate = rilSignalStrength->GW_SignalStrength.bitErrorRate;
-    signalStrength.cdma.dbm = cdmaDbm;
-    signalStrength.cdma.ecio = rilSignalStrength->CDMA_SignalStrength.ecio;
-    signalStrength.evdo.dbm = evdoDbm;
-    signalStrength.evdo.ecio = rilSignalStrength->EVDO_SignalStrength.ecio;
-    signalStrength.evdo.signalNoiseRatio =
-            rilSignalStrength->EVDO_SignalStrength.signalNoiseRatio;
-    signalStrength.lte.signalStrength = 99;
-    signalStrength.lte.rsrp = INT_MAX;
-    signalStrength.lte.rsrq = INT_MAX;
-    signalStrength.lte.rssnr = INT_MAX;
-    signalStrength.lte.cqi = INT_MAX;
-    signalStrength.lte.timingAdvance = INT_MAX;
-    signalStrength.tdScdma.rscp = INT_MAX;
-}
-
-void convertRilSignalStrengthToHalV6(void *response, size_t responseLen,
-        SignalStrength& signalStrength) {
-    RIL_SignalStrength_v6 *rilSignalStrength = (RIL_SignalStrength_v6 *) response;
-    int gsmSignalStrength;
-    int cdmaDbm;
-    int evdoDbm;
-
-    gsmSignalStrength = rilSignalStrength->GW_SignalStrength.signalStrength & 0xFF;
-
-#ifdef MODEM_TYPE_XMM6260
-        if (gsmSignalStrength < 0 ||
-                (gsmSignalStrength > 31 && rilSignalStrength->GW_SignalStrength.signalStrength != 99)) {
-            gsmSignalStrength = rilSignalStrength->CDMA_SignalStrength.dbm;
-        }
-#else
-        if (gsmSignalStrength < 0) {
-            gsmSignalStrength = 99;
-        } else if (gsmSignalStrength > 31 && gsmSignalStrength != 99) {
-            gsmSignalStrength = 31;
-        }
-#endif
-
-#if defined(MODEM_TYPE_XMM6262) || defined(SAMSUNG_NEXT_GEN_MODEM)
-        cdmaDbm = rilSignalStrength->CDMA_SignalStrength.dbm & 0xFF;
-        if (cdmaDbm < 0) {
-            cdmaDbm = 99;
-        } else if (cdmaDbm > 31 && cdmaDbm != 99) {
-            cdmaDbm = 31;
-        }
-#else
-        cdmaDbm = rilSignalStrength->CDMA_SignalStrength.dbm;
-#endif
-
-#if defined(MODEM_TYPE_XMM6262) || defined(SAMSUNG_NEXT_GEN_MODEM)
-        evdoDbm = rilSignalStrength->EVDO_SignalStrength.dbm & 0xFF;
-        if (evdoDbm < 0) {
-            evdoDbm = 99;
-        } else if (evdoDbm > 31 && evdoDbm != 99) {
-            evdoDbm = 31;
-        }
-#else
-        evdoDbm = rilSignalStrength->EVDO_SignalStrength.dbm;
-#endif
-
-    // Fixup LTE for backwards compatibility
-    // signalStrength: -1 -> 99
-    if (rilSignalStrength->LTE_SignalStrength.signalStrength == -1) {
-        rilSignalStrength->LTE_SignalStrength.signalStrength = 99;
-    }
-    // rsrp: -1 -> INT_MAX all other negative value to positive.
-    // So remap here
-    if (rilSignalStrength->LTE_SignalStrength.rsrp == -1) {
-        rilSignalStrength->LTE_SignalStrength.rsrp = INT_MAX;
-    } else if (rilSignalStrength->LTE_SignalStrength.rsrp < -1) {
-        rilSignalStrength->LTE_SignalStrength.rsrp = -rilSignalStrength->LTE_SignalStrength.rsrp;
-    }
-    // rsrq: -1 -> INT_MAX
-    if (rilSignalStrength->LTE_SignalStrength.rsrq == -1) {
-        rilSignalStrength->LTE_SignalStrength.rsrq = INT_MAX;
-    }
-    // Not remapping rssnr is already using INT_MAX
-    // cqi: -1 -> INT_MAX
-    if (rilSignalStrength->LTE_SignalStrength.cqi == -1) {
-        rilSignalStrength->LTE_SignalStrength.cqi = INT_MAX;
-    }
-
-    signalStrength.gw.signalStrength = gsmSignalStrength;
-    signalStrength.gw.bitErrorRate = rilSignalStrength->GW_SignalStrength.bitErrorRate;
-    signalStrength.cdma.dbm = cdmaDbm;
-    signalStrength.cdma.ecio = rilSignalStrength->CDMA_SignalStrength.ecio;
-    signalStrength.evdo.dbm = evdoDbm;
-    signalStrength.evdo.ecio = rilSignalStrength->EVDO_SignalStrength.ecio;
-    signalStrength.evdo.signalNoiseRatio =
-            rilSignalStrength->EVDO_SignalStrength.signalNoiseRatio;
-    signalStrength.lte.signalStrength = rilSignalStrength->LTE_SignalStrength.signalStrength;
-    signalStrength.lte.rsrp = rilSignalStrength->LTE_SignalStrength.rsrp;
-    signalStrength.lte.rsrq = rilSignalStrength->LTE_SignalStrength.rsrq;
-    signalStrength.lte.rssnr = rilSignalStrength->LTE_SignalStrength.rssnr;
-    signalStrength.lte.cqi = rilSignalStrength->LTE_SignalStrength.cqi;
-    signalStrength.lte.timingAdvance = INT_MAX;
-    signalStrength.tdScdma.rscp = INT_MAX;
-}
-
 void convertRilSignalStrengthToHalV8(void *response, size_t responseLen,
         SignalStrength& signalStrength) {
     RIL_SignalStrength_v8 *rilSignalStrength = (RIL_SignalStrength_v8 *) response;
-    int gsmSignalStrength;
-    int cdmaDbm;
-    int evdoDbm;
-
-    gsmSignalStrength = rilSignalStrength->GW_SignalStrength.signalStrength & 0xFF;
-
-#ifdef MODEM_TYPE_XMM6260
-        if (gsmSignalStrength < 0 ||
-                (gsmSignalStrength > 31 && rilSignalStrength->GW_SignalStrength.signalStrength != 99)) {
-            gsmSignalStrength = rilSignalStrength->CDMA_SignalStrength.dbm;
-        }
-#else
-        if (gsmSignalStrength < 0) {
-            gsmSignalStrength = 99;
-        } else if (gsmSignalStrength > 31 && gsmSignalStrength != 99) {
-            gsmSignalStrength = 31;
-        }
-#endif
-
-#if defined(MODEM_TYPE_XMM6262) || defined(SAMSUNG_NEXT_GEN_MODEM)
-        cdmaDbm = rilSignalStrength->CDMA_SignalStrength.dbm & 0xFF;
-        if (cdmaDbm < 0) {
-            cdmaDbm = 99;
-        } else if (cdmaDbm > 31 && cdmaDbm != 99) {
-            cdmaDbm = 31;
-        }
-#else
-        cdmaDbm = rilSignalStrength->CDMA_SignalStrength.dbm;
-#endif
-
-#if defined(MODEM_TYPE_XMM6262) || defined(SAMSUNG_NEXT_GEN_MODEM)
-        evdoDbm = rilSignalStrength->EVDO_SignalStrength.dbm & 0xFF;
-        if (evdoDbm < 0) {
-            evdoDbm = 99;
-        } else if (evdoDbm > 31 && evdoDbm != 99) {
-            evdoDbm = 31;
-        }
-#else
-        evdoDbm = rilSignalStrength->EVDO_SignalStrength.dbm;
-#endif
 
     // Fixup LTE for backwards compatibility
     // signalStrength: -1 -> 99
@@ -6914,11 +6717,11 @@ void convertRilSignalStrengthToHalV8(void *response, size_t responseLen,
         rilSignalStrength->LTE_SignalStrength.cqi = INT_MAX;
     }
 
-    signalStrength.gw.signalStrength = gsmSignalStrength;
+    signalStrength.gw.signalStrength = rilSignalStrength->GW_SignalStrength.signalStrength;
     signalStrength.gw.bitErrorRate = rilSignalStrength->GW_SignalStrength.bitErrorRate;
-    signalStrength.cdma.dbm = cdmaDbm;
+    signalStrength.cdma.dbm = rilSignalStrength->CDMA_SignalStrength.dbm;
     signalStrength.cdma.ecio = rilSignalStrength->CDMA_SignalStrength.ecio;
-    signalStrength.evdo.dbm = evdoDbm;
+    signalStrength.evdo.dbm = rilSignalStrength->EVDO_SignalStrength.dbm;
     signalStrength.evdo.ecio = rilSignalStrength->EVDO_SignalStrength.ecio;
     signalStrength.evdo.signalNoiseRatio =
             rilSignalStrength->EVDO_SignalStrength.signalNoiseRatio;
@@ -6934,46 +6737,6 @@ void convertRilSignalStrengthToHalV8(void *response, size_t responseLen,
 void convertRilSignalStrengthToHalV10(void *response, size_t responseLen,
         SignalStrength& signalStrength) {
     RIL_SignalStrength_v10 *rilSignalStrength = (RIL_SignalStrength_v10 *) response;
-    int gsmSignalStrength;
-    int cdmaDbm;
-    int evdoDbm;
-
-    gsmSignalStrength = rilSignalStrength->GW_SignalStrength.signalStrength & 0xFF;
-
-#ifdef MODEM_TYPE_XMM6260
-        if (gsmSignalStrength < 0 ||
-                (gsmSignalStrength > 31 && rilSignalStrength->GW_SignalStrength.signalStrength != 99)) {
-            gsmSignalStrength = rilSignalStrength->CDMA_SignalStrength.dbm;
-        }
-#else
-        if (gsmSignalStrength < 0) {
-            gsmSignalStrength = 99;
-        } else if (gsmSignalStrength > 31 && gsmSignalStrength != 99) {
-            gsmSignalStrength = 31;
-        }
-#endif
-
-#if defined(MODEM_TYPE_XMM6262) || defined(SAMSUNG_NEXT_GEN_MODEM)
-        cdmaDbm = rilSignalStrength->CDMA_SignalStrength.dbm & 0xFF;
-        if (cdmaDbm < 0) {
-            cdmaDbm = 99;
-        } else if (cdmaDbm > 31 && cdmaDbm != 99) {
-            cdmaDbm = 31;
-        }
-#else
-        cdmaDbm = rilSignalStrength->CDMA_SignalStrength.dbm;
-#endif
-
-#if defined(MODEM_TYPE_XMM6262) || defined(SAMSUNG_NEXT_GEN_MODEM)
-        evdoDbm = rilSignalStrength->EVDO_SignalStrength.dbm & 0xFF;
-        if (evdoDbm < 0) {
-            evdoDbm = 99;
-        } else if (evdoDbm > 31 && evdoDbm != 99) {
-            evdoDbm = 31;
-        }
-#else
-        evdoDbm = rilSignalStrength->EVDO_SignalStrength.dbm;
-#endif
 
     // Fixup LTE for backwards compatibility
     // signalStrength: -1 -> 99
@@ -6997,11 +6760,11 @@ void convertRilSignalStrengthToHalV10(void *response, size_t responseLen,
         rilSignalStrength->LTE_SignalStrength.cqi = INT_MAX;
     }
 
-    signalStrength.gw.signalStrength = gsmSignalStrength;
+    signalStrength.gw.signalStrength = rilSignalStrength->GW_SignalStrength.signalStrength;
     signalStrength.gw.bitErrorRate = rilSignalStrength->GW_SignalStrength.bitErrorRate;
-    signalStrength.cdma.dbm = cdmaDbm;
+    signalStrength.cdma.dbm = rilSignalStrength->CDMA_SignalStrength.dbm;
     signalStrength.cdma.ecio = rilSignalStrength->CDMA_SignalStrength.ecio;
-    signalStrength.evdo.dbm = evdoDbm;
+    signalStrength.evdo.dbm = rilSignalStrength->EVDO_SignalStrength.dbm;
     signalStrength.evdo.ecio = rilSignalStrength->EVDO_SignalStrength.ecio;
     signalStrength.evdo.signalNoiseRatio =
             rilSignalStrength->EVDO_SignalStrength.signalNoiseRatio;
@@ -7016,11 +6779,7 @@ void convertRilSignalStrengthToHalV10(void *response, size_t responseLen,
 
 void convertRilSignalStrengthToHal(void *response, size_t responseLen,
         SignalStrength& signalStrength) {
-    if (responseLen == sizeof(RIL_SignalStrength_v5)) {
-        convertRilSignalStrengthToHalV5(response, responseLen, signalStrength);
-    } else if (responseLen == sizeof(RIL_SignalStrength_v6)) {
-        convertRilSignalStrengthToHalV6(response, responseLen, signalStrength);
-    } else if (responseLen == sizeof(RIL_SignalStrength_v8)) {
+    if (responseLen == sizeof(RIL_SignalStrength_v8)) {
         convertRilSignalStrengthToHalV8(response, responseLen, signalStrength);
     } else {
         convertRilSignalStrengthToHalV10(response, responseLen, signalStrength);
@@ -7064,11 +6823,7 @@ void convertRilDataCallToHal(RIL_Data_Call_Response_v6 *dcResponse,
     dcResult.ifname = convertCharPtrToHidlString(dcResponse->ifname);
     dcResult.addresses = convertCharPtrToHidlString(dcResponse->addresses);
     dcResult.dnses = convertCharPtrToHidlString(dcResponse->dnses);
-#if defined(MODEM_TYPE_XMM6262) || defined(MODEM_TYPE_XMM6260)
-    dcResult.gateways = convertCharPtrToHidlString(dcResponse->addresses);
-#else
     dcResult.gateways = convertCharPtrToHidlString(dcResponse->gateways);
-#endif
     dcResult.pcscf = hidl_string();
     dcResult.mtu = 0;
 }
