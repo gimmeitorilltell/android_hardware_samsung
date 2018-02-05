@@ -21,7 +21,7 @@ include device/qcom/common/dtbtool/Android.mk
 endif
 
 ifeq ($(strip $(TARGET_CUSTOM_DTBTOOL)),)
-DTBTOOL_NAME := dtbToolLineage
+DTBTOOL_NAME := dtbToolCandy
 else
 DTBTOOL_NAME := $(TARGET_CUSTOM_DTBTOOL)
 endif
@@ -31,7 +31,7 @@ DTBTOOL := $(HOST_OUT_EXECUTABLES)/$(DTBTOOL_NAME)$(HOST_EXECUTABLE_SUFFIX)
 INSTALLED_DTIMAGE_TARGET := $(PRODUCT_OUT)/dt.img
 
 ifeq ($(strip $(TARGET_CUSTOM_DTBTOOL)),)
-# dtbToolCM will search subdirectories
+# dtbToolCandy will search subdirectories
 possible_dtb_dirs = $(KERNEL_OUT)/arch/$(KERNEL_ARCH)/boot/
 else
 # Most specific paths must come first in possible_dtb_dirs
